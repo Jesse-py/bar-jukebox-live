@@ -1,0 +1,5 @@
+{
+  "name": "Bar Jukebox Live",
+  "description": "A live music request app for bar patrons and DJs. Customers can request songs, and the DJ sees a prioritized list. Features a 2-hour cooldown for played songs and fun facts powered by Gemini.",
+  "requestFramePermissions": []
+}

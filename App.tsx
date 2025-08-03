@@ -2,14 +2,17 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import CustomerView from './components/CustomerView';
 import DjView from './components/DjView';
-import type { SongRequest, CooldownSong } from './types';
+import type { SongRequest, CooldownSong, BlacklistedSong } from './types';
 import { getFunFact } from './services/geminiService';
 
-const DjViewRoute: React.FC<{
+const DjViewWrapper: React.FC<{
   songRequests: SongRequest[];
   cooldownSongs: CooldownSong[];
+  blacklist: BlacklistedSong[];
   handlePlaySong: (songId: string) => void;
-}> = ({ songRequests, cooldownSongs, handlePlaySong }) => {
+  handleAddToBlacklist: (title: string, artist: string) => void;
+  handleRemoveFromBlacklist: (songId: string) => void;
+}> = (props) => {
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
 
@@ -17,13 +20,7 @@ const DjViewRoute: React.FC<{
     return <Navigate to="/" replace />;
   }
 
-  return (
-    <DjView
-      songRequests={songRequests}
-      cooldownSongs={cooldownSongs}
-      handlePlaySong={handlePlaySong}
-    />
-  );
+  return <DjView {...props} />;
 };
 
 const App: React.FC = () => {
@@ -38,6 +35,14 @@ const App: React.FC = () => {
   const [cooldownSongs, setCooldownSongs] = useState<CooldownSong[]>(() => {
     try {
       const saved = localStorage.getItem('cooldownSongs');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [blacklist, setBlacklist] = useState<BlacklistedSong[]>(() => {
+    try {
+      const saved = localStorage.getItem('blacklist');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -60,6 +65,10 @@ const App: React.FC = () => {
     localStorage.setItem('cooldownSongs', JSON.stringify(cooldownSongs));
   }, [cooldownSongs]);
 
+  useEffect(() => {
+    localStorage.setItem('blacklist', JSON.stringify(blacklist));
+  }, [blacklist]);
+
   // Listen for changes from other tabs
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
@@ -68,6 +77,9 @@ const App: React.FC = () => {
       }
       if (e.key === 'cooldownSongs' && e.newValue) {
         setCooldownSongs(JSON.parse(e.newValue));
+      }
+      if (e.key === 'blacklist' && e.newValue) {
+        setBlacklist(JSON.parse(e.newValue));
       }
     };
     window.addEventListener('storage', handleStorage);
@@ -87,12 +99,22 @@ const App: React.FC = () => {
     setGeminiFact(null);
     setError(null);
   }, []);
+  
+  const generateSongId = (title: string, artist: string) => {
+    return `${artist.toLowerCase().trim().replace(/\s+/g, '-')}-${title.toLowerCase().trim().replace(/\s+/g, '-')}`;
+  };
 
   const handleRequestSong = useCallback(async (title: string, artist: string) => {
     clearMessages();
     setIsLoading(true);
 
-    const songId = `${artist.toLowerCase().trim().replace(/\s+/g, '-')}-${title.toLowerCase().trim().replace(/\s+/g, '-')}`;
+    const songId = generateSongId(title, artist);
+
+    if (blacklist.some(song => song.id === songId)) {
+        setError(`"${title}" is not available for request.`);
+        setIsLoading(false);
+        return;
+    }
 
     if (cooldownSongs.some(song => song.id === songId)) {
       setError(`"${title}" was played recently. Please wait a bit before requesting it again.`);
@@ -116,7 +138,7 @@ const App: React.FC = () => {
     const fact = await factPromise;
     setGeminiFact(fact);
     setIsLoading(false);
-  }, [cooldownSongs, clearMessages]);
+  }, [cooldownSongs, blacklist, clearMessages]);
 
   const handlePlaySong = useCallback((songId: string) => {
     const songToPlay = songRequests.find(req => req.id === songId);
@@ -131,6 +153,25 @@ const App: React.FC = () => {
       cooldownUntil: Date.now() + COOLDOWN_DURATION,
     }]);
   }, [songRequests, COOLDOWN_DURATION]);
+
+  const handleAddToBlacklist = useCallback((title: string, artist: string) => {
+    const songId = generateSongId(title, artist);
+    const blacklistedSong: BlacklistedSong = { id: songId, title, artist };
+
+    setBlacklist(prev => {
+        if (prev.some(s => s.id === songId)) {
+            return prev; // Already blacklisted
+        }
+        return [...prev, blacklistedSong];
+    });
+
+    // Also remove any pending requests for this song
+    setSongRequests(prev => prev.filter(req => req.id !== songId));
+  }, []);
+
+  const handleRemoveFromBlacklist = useCallback((songId: string) => {
+    setBlacklist(prev => prev.filter(song => song.id !== songId));
+  }, []);
   
   const NavLinks = () => {
     const location = useLocation();
@@ -177,6 +218,7 @@ const App: React.FC = () => {
                   <Route path="/" element={
                       <CustomerView 
                           handleRequestSong={handleRequestSong} 
+                          blacklist={blacklist}
                           isLoading={isLoading}
                           geminiFact={geminiFact}
                           error={error}
@@ -184,10 +226,13 @@ const App: React.FC = () => {
                       />
                   } />
                   <Route path="/dj" element={
-                      <DjViewRoute 
+                      <DjViewWrapper 
                           songRequests={songRequests} 
                           cooldownSongs={cooldownSongs}
+                          blacklist={blacklist}
                           handlePlaySong={handlePlaySong}
+                          handleAddToBlacklist={handleAddToBlacklist}
+                          handleRemoveFromBlacklist={handleRemoveFromBlacklist}
                       />
                   } />
               </Routes>

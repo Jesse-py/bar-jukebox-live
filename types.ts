@@ -1,4 +1,3 @@
-
 export interface SongRequest {
   id: string; // "artist-title"
   title: string;
@@ -11,6 +10,12 @@ export interface CooldownSong {
   title: string;
   artist: string;
   cooldownUntil: number; // Timestamp
+}
+
+export interface BlacklistedSong {
+  id: string; // "artist-title"
+  title: string;
+  artist: string;
 }
 
 export interface MusicBrainzSong {

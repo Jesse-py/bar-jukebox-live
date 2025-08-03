@@ -1,27 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
 import CustomerView from './components/CustomerView';
 import DjView from './components/DjView';
+import LoginView from './components/LoginView';
 import type { SongRequest, CooldownSong, BlacklistedSong } from './types';
 import { getFunFact } from './services/geminiService';
-
-const DjViewWrapper: React.FC<{
-  songRequests: SongRequest[];
-  cooldownSongs: CooldownSong[];
-  blacklist: BlacklistedSong[];
-  handlePlaySong: (songId: string) => void;
-  handleAddToBlacklist: (title: string, artist: string) => void;
-  handleRemoveFromBlacklist: (songId: string) => void;
-}> = (props) => {
-  const location = useLocation();
-  const queryParams = new URLSearchParams(location.search);
-
-  if (queryParams.get('djMode') !== 'true') {
-    return <Navigate to="/" replace />;
-  }
-
-  return <DjView {...props} />;
-};
 
 const App: React.FC = () => {
   const [songRequests, setSongRequests] = useState<SongRequest[]>(() => {
@@ -46,6 +29,14 @@ const App: React.FC = () => {
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
+    }
+  });
+
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('isDjAuthenticated') === 'true';
+    } catch {
+      return false; // Default to not authenticated if sessionStorage is unavailable
     }
   });
 
@@ -102,6 +93,11 @@ const App: React.FC = () => {
   
   const generateSongId = (title: string, artist: string) => {
     return `${artist.toLowerCase().trim().replace(/\s+/g, '-')}-${title.toLowerCase().trim().replace(/\s+/g, '-')}`;
+  };
+
+  const handleLogin = () => {
+    sessionStorage.setItem('isDjAuthenticated', 'true');
+    setIsAuthenticated(true);
   };
 
   const handleRequestSong = useCallback(async (title: string, artist: string) => {
@@ -175,29 +171,45 @@ const App: React.FC = () => {
   
   const NavLinks = () => {
     const location = useLocation();
-    const queryParams = new URLSearchParams(location.search);
-    const isDj = location.pathname === '/dj' && queryParams.get('djMode') === 'true';
-    const view = isDj ? 'dj' : 'customer';
+    const navigate = useNavigate();
+
+    const handleLogoutClick = () => {
+        sessionStorage.removeItem('isDjAuthenticated');
+        setIsAuthenticated(false);
+        navigate('/');
+    };
+    
+    const isDjView = location.pathname === '/dj';
+    const view = isDjView ? 'dj' : 'customer';
 
     const linkClasses = (buttonView: 'customer' | 'dj') => {
         const base = "px-6 py-2 rounded-full font-semibold transition-all duration-300";
-        const activeClasses = view === buttonView ? `text-slate-900 shadow-lg` : 'bg-transparent text-slate-300';
+        const activeClasses = view === buttonView ? `text-slate-900 shadow-lg` : 'bg-transparent text-slate-300 hover:bg-slate-700/50';
         const colorClass = buttonView === 'customer' ? 'bg-cyan-400' : 'bg-pink-400';
         return `${base} ${view === buttonView ? colorClass : ''} ${activeClasses}`;
     };
 
     return (
-        <div className="flex justify-center mb-10">
+        <div className="flex justify-center items-center mb-10">
             <div className="bg-slate-800 p-1.5 rounded-full flex items-center space-x-2 border border-slate-700">
                 <Link to="/" className={linkClasses('customer')}>
                     Customer
                 </Link>
-                {isDj && (
-                    <Link to="/dj?djMode=true" className={linkClasses('dj')}>
+                {isAuthenticated ? (
+                    <Link to="/dj" className={linkClasses('dj')}>
                         DJ
+                    </Link>
+                ) : (
+                     <Link to="/login" className="px-6 py-2 rounded-full font-semibold transition-all duration-300 text-slate-300 hover:bg-slate-700/50">
+                        DJ Login
                     </Link>
                 )}
             </div>
+             {isAuthenticated && isDjView && (
+                <button onClick={handleLogoutClick} className="ml-4 text-sm font-semibold text-pink-400 hover:text-pink-300 transition-colors">
+                    Logout
+                </button>
+            )}
         </div>
     );
   };
@@ -225,15 +237,22 @@ const App: React.FC = () => {
                           clearMessages={clearMessages}
                       />
                   } />
+                   <Route path="/login" element={
+                        isAuthenticated ? <Navigate to="/dj" replace /> : <LoginView onLogin={handleLogin} />
+                   } />
                   <Route path="/dj" element={
-                      <DjViewWrapper 
-                          songRequests={songRequests} 
-                          cooldownSongs={cooldownSongs}
-                          blacklist={blacklist}
-                          handlePlaySong={handlePlaySong}
-                          handleAddToBlacklist={handleAddToBlacklist}
-                          handleRemoveFromBlacklist={handleRemoveFromBlacklist}
-                      />
+                      isAuthenticated ? (
+                        <DjView 
+                            songRequests={songRequests} 
+                            cooldownSongs={cooldownSongs}
+                            blacklist={blacklist}
+                            handlePlaySong={handlePlaySong}
+                            handleAddToBlacklist={handleAddToBlacklist}
+                            handleRemoveFromBlacklist={handleRemoveFromBlacklist}
+                        />
+                      ) : (
+                        <Navigate to="/login" replace />
+                      )
                   } />
               </Routes>
           </main>
